@@ -1,6 +1,6 @@
 """
 Family Events Mailer – Leverkusen/Köln
-Quellen: Ticketmaster + Eventbrite + Google Custom Search
+Quellen: Ticketmaster + Köln.de + Google Custom Search
 Familie: Mikel (55), Sandra (51), Halley Malia (5), Samuel (13)
 """
 
@@ -139,39 +139,33 @@ def fetch_ticketmaster_events(date: datetime.date) -> list[str]:
         return []
 
 
-# ── Eventbrite ───────────────────────────────────────────────────────────────
+# ── Köln.de Veranstaltungen ───────────────────────────────────────────────────
 
-def fetch_eventbrite_events(date: datetime.date) -> list[str]:
-    if not EVENTBRITE_API_KEY:
-        return []
+def fetch_koeln_events(date: datetime.date) -> list[str]:
+    """Lädt Events von koeln.de über deren JSON-API (kein Key nötig)."""
+    datum_str = date.strftime("%Y-%m-%d")
     params = urllib.parse.urlencode({
-        "q": "Köln",
-        "location.latitude": LAT,
-        "location.longitude": LON,
-        "location.within": "30km",
-        "start_date.range_start": f"{date.isoformat()}T00:00:00Z",
-        "start_date.range_end":   f"{date.isoformat()}T23:59:59Z",
-        "expand": "venue",
-        "page_size": 8,
+        "tx_terminekoeln_pi1[datum]": datum_str,
+        "tx_terminekoeln_pi1[sort]": "datum",
+        "tx_terminekoeln_pi1[max]": 10,
+        "type": 1234,
     })
     try:
         req = urllib.request.Request(
-            f"https://www.eventbriteapi.com/v3/events/search/?{params}",
-            headers={"Authorization": f"Bearer {EVENTBRITE_API_KEY}"},
+            f"https://www.koeln.de/veranstaltungen/?{params}",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; FamilyEventsBot/1.0)"},
         )
         with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read())
-        lines = []
-        for e in data.get("events", []):
-            name  = e.get("name", {}).get("text", "")
-            venue = e.get("venue", {})
-            ort   = venue.get("name", "") if venue else ""
-            start = e.get("start", {}).get("local", "")
-            time  = start[11:16] if len(start) > 16 else ""
-            lines.append(f"• {name}" + (f" um {time}" if time else "") + (f" | {ort}" if ort else ""))
+            raw = r.read().decode("utf-8", errors="ignore")
+        # Einfacher Titel-Extrakt aus HTML <h2> / <h3> Tags
+        import re
+        titles = re.findall(r'<h[23][^>]*class="[^"]*title[^"]*"[^>]*>\s*<a[^>]*>([^<]+)<', raw)
+        if not titles:
+            titles = re.findall(r'<h[23][^>]*>\s*<a[^>]*>([^<]{10,80})<', raw)
+        lines = [f"• {t.strip()}" for t in titles[:8] if t.strip()]
         return lines
     except Exception as ex:
-        print(f"⚠️  Eventbrite: {ex}")
+        print(f"⚠️  Köln.de: {ex}")
         return []
 
 
@@ -266,7 +260,7 @@ def find_events_for_day(
 
     all_events = []
     if tm: all_events += [f"[Ticketmaster] {e}" for e in tm]
-    if eb: all_events += [f"[Eventbrite] {e}"   for e in eb]
+    if eb: all_events += [f"[Köln.de] {e}"   for e in eb]
     if gs: all_events += [f"[Web] {e}"           for e in gs]
     events_text = "\n".join(all_events) if all_events else "Keine externen Events gefunden."
 
@@ -282,7 +276,7 @@ Erstelle einen Tagesplan für {tag}, den {date.strftime("%d.%m.%Y")}.
 Regen {w['regen_wahrscheinlichkeit']:.0f} % → Fokus: {FOCUS_LABEL[typ]}
 Erlaubte Aktivitäten: {ACTIVITY_LISTS[typ]}
 
-══ ECHTE EVENTS HEUTE (aus Ticketmaster, Eventbrite, Web) ══
+══ ECHTE EVENTS HEUTE (aus Ticketmaster, Köln.de, Web) ══
 {events_text}
 
 ══ GESPERRTE ORTE – NICHT vorschlagen ══
@@ -327,12 +321,12 @@ def find_events_with_claude(saturday: datetime.date, sunday: datetime.date, fore
     print("   🎫 Lade externe Events …")
     sat_tm = fetch_ticketmaster_events(saturday)
     sun_tm = fetch_ticketmaster_events(sunday)
-    sat_eb = fetch_eventbrite_events(saturday)
-    sun_eb = fetch_eventbrite_events(sunday)
+    sat_eb = fetch_koeln_events(saturday)
+    sun_eb = fetch_koeln_events(sunday)
     sat_gs = fetch_google_events(saturday)
     sun_gs = fetch_google_events(sunday)
-    print(f"   → Sa: TM={len(sat_tm)} EB={len(sat_eb)} G={len(sat_gs)} | "
-          f"So: TM={len(sun_tm)} EB={len(sun_eb)} G={len(sun_gs)}")
+    print(f"   → Sa: TM={len(sat_tm)} KN={len(sat_eb)} G={len(sat_gs)} | "
+          f"So: TM={len(sun_tm)} KN={len(sun_eb)} G={len(sun_gs)}")
 
     print("   🤖 Claude plant Samstag …")
     sat_text = find_events_for_day(
@@ -402,7 +396,7 @@ def format_slack_message(sat_text, sun_text, saturday, sunday, forecast) -> dict
         *_slack_blocks(sun_text),
         {"type": "divider"},
         {"type": "context", "elements": [{"type": "mrkdwn",
-            "text": f"_Quellen: Ticketmaster · Eventbrite · Google · Claude Opus · "
+            "text": f"_Quellen: Ticketmaster · Köln.de · Google · Claude Opus · "
                     f"{datetime.date.today().strftime('%d.%m.%Y')} · Family Events Mailer_"}]},
     ]}
 
@@ -475,7 +469,7 @@ def send_email(sat_text, sun_text, saturday, sunday, forecast) -> None:
 <h3>📍 Sonntag {sun_str} – {FOCUS_LABEL[sun_typ]}</h3>
 <p style="line-height:1.8;">{h(sun_text)}</p><hr>
 <p style="color:#aaa;font-size:12px;">
-Quellen: Ticketmaster · Eventbrite · Google · Claude Opus ·
+Quellen: Ticketmaster · Köln.de · Google · Claude Opus ·
 {datetime.date.today().strftime("%d.%m.%Y")} · Family Events Mailer</p>
 </body></html>"""
 
