@@ -3,24 +3,28 @@
     {
       "name": "Halley Malia",
       "alter": 5,
-      "interessen": ["Pony", "Radfahren", "Einhorn", "Tanzen", "Singen", "Schwimmen", "Kino", "Pizza essen", "Malen"]
+      "interessen": ["Pony", "Radfahren", "Einhorn", "Tanzen", "Singen", "Schwimmen", "Kino", "Pizza essen", "Malen"],
+      "abneigungen": []
     },
     {
       "name": "Samuel",
       "alter": 13,
-      "interessen": ["Kino", "Anime", "Fussball", "Schwimmen", "Pizza essen", "Kämpfen", "RAP"]
+      "interessen": ["Kino", "Anime", "Fussball", "Schwimmen", "Pizza essen", "Kämpfen", "RAP"],
+      "abneigungen": []
     }
   ],
   "eltern": [
     {
       "name": "Mikel",
       "alter": 55,
-      "interessen": ["Kunst", "Sport", "Essen", "Bewegung"]
+      "interessen": ["Kunst", "Sport", "Essen", "Bewegung"],
+      "abneigungen": []
     },
     {
       "name": "Sandra",
       "alter": 51,
-      "interessen": ["Kunst", "Sport", "Tai-Chi", "Malen", "Essen", "Bewegung"]
+      "interessen": ["Kunst", "Sport", "Tai-Chi", "Malen", "Essen", "Bewegung"],
+      "abneigungen": []
     }
   ]
 }
