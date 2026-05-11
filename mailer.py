@@ -139,35 +139,11 @@ def fetch_ticketmaster_events(date: datetime.date) -> list[str]:
         return []
 
 
-# ── Meetup.com ────────────────────────────────────────────────────────────────
+# ── Lokale Events (Platzhalter – Google Custom Search übernimmt diese Rolle) ──
 
 def fetch_koeln_events(date: datetime.date) -> list[str]:
-    """Lädt öffentliche Meetup-Events rund um Köln (kein API-Key nötig)."""
-    params = urllib.parse.urlencode({
-        "lat": LAT, "lon": LON, "radius": 30,
-        "page": 10, "only": "name,local_date,local_time,venue.name",
-    })
-    try:
-        req = urllib.request.Request(
-            f"https://api.meetup.com/find/upcoming_events?{params}",
-            headers={"Accept": "application/json",
-                     "User-Agent": "Mozilla/5.0 (compatible; FamilyEventsBot/1.0)"},
-        )
-        with urllib.request.urlopen(req, timeout=8) as r:
-            data = json.loads(r.read())
-        date_str = date.isoformat()
-        lines = []
-        for e in data.get("events", []):
-            if e.get("local_date") != date_str:
-                continue
-            name  = e.get("name", "")
-            time  = e.get("local_time", "")[:5]
-            venue = (e.get("venue") or {}).get("name", "")
-            lines.append(f"• {name}" + (f" um {time}" if time else "") + (f" | {venue}" if venue else ""))
-        return lines[:8]
-    except Exception as ex:
-        print(f"⚠️  Meetup: {ex}")
-        return []
+    """Reserviert für künftige Eventquelle. Google Custom Search (G=) ist aktiv."""
+    return []
 
 
 # ── Google Custom Search ──────────────────────────────────────────────────────
