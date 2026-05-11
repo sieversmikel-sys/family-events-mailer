@@ -10,11 +10,17 @@ import datetime
 import urllib.request
 import urllib.error
 import urllib.parse
+import smtplib
+import email.mime.multipart
+import email.mime.text
 from pathlib import Path
 import anthropic
 
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+EMAIL_TO = "sievers.mikel@gmail.com"
+EMAIL_FROM = "sievers.mikel@gmail.com"
 
 # Koordinaten Leverkusen (Stadtmitte)
 LAT = 51.0459
@@ -317,6 +323,71 @@ def format_slack_message(
     }
 
 
+def send_email(events_text: str, saturday: datetime.date, sunday: datetime.date, forecast: dict) -> None:
+    if not GMAIL_APP_PASSWORD:
+        print("⚠️  GMAIL_APP_PASSWORD nicht gesetzt – E-Mail wird übersprungen.")
+        return
+
+    sat_str = saturday.strftime("%d.%m.%Y")
+    sun_str = sunday.strftime("%d.%m.%Y")
+    sat_typ = classify_day(forecast["Samstag"]) if "Samstag" in forecast else "gemischt"
+    sun_typ = classify_day(forecast["Sonntag"]) if "Sonntag" in forecast else "gemischt"
+
+    weather_html = ""
+    for tag, w, typ in [
+        ("Samstag", forecast.get("Samstag"), sat_typ),
+        ("Sonntag", forecast.get("Sonntag"), sun_typ),
+    ]:
+        if w:
+            weather_html += (
+                f"<tr><td><b>{w['emoji']} {tag} {w['datum']}</b></td>"
+                f"<td>{w['beschreibung']}</td>"
+                f"<td>{w['temp_min']:.0f}–{w['temp_max']:.0f} °C</td>"
+                f"<td>Regen {w['regen_wahrscheinlichkeit']:.0f} %</td>"
+                f"<td><i>{FOCUS_LABEL[typ]}</i></td></tr>"
+            )
+
+    events_html = events_text.replace("\n", "<br>")
+
+    html = f"""
+    <html><body style="font-family:Arial,sans-serif;max-width:700px;margin:auto;padding:20px;">
+      <h2 style="color:#2c3e50;">🎉 Familien-Wochenende {sat_str}–{sun_str}</h2>
+      <p style="color:#666;">📍 Region Leverkusen/Köln &nbsp;|&nbsp; 👧 Halley Malia (5 J.) &nbsp;|&nbsp; 🧑 Samuel (13 J.)</p>
+      <hr>
+      <h3>🌤️ Wettervorhersage</h3>
+      <table style="border-collapse:collapse;width:100%;">
+        <tr style="background:#f0f0f0;">
+          <th style="padding:6px;text-align:left;">Tag</th>
+          <th style="padding:6px;text-align:left;">Wetter</th>
+          <th style="padding:6px;text-align:left;">Temp.</th>
+          <th style="padding:6px;text-align:left;">Regen</th>
+          <th style="padding:6px;text-align:left;">Fokus</th>
+        </tr>
+        {weather_html}
+      </table>
+      <hr>
+      <h3>📍 Empfehlungen</h3>
+      <p style="line-height:1.7;">{events_html}</p>
+      <hr>
+      <p style="color:#aaa;font-size:12px;">
+        Wetter: Open-Meteo · Events: Claude Opus ·
+        Generiert am {datetime.date.today().strftime("%d.%m.%Y")} · Family Events Mailer
+      </p>
+    </body></html>
+    """
+
+    msg = email.mime.multipart.MIMEMultipart("alternative")
+    msg["Subject"] = f"🎉 Familien-Wochenende {sat_str}–{sun_str} | Leverkusen/Köln"
+    msg["From"] = EMAIL_FROM
+    msg["To"] = EMAIL_TO
+    msg.attach(email.mime.text.MIMEText(html, "html", "utf-8"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        smtp.login(EMAIL_FROM, GMAIL_APP_PASSWORD)
+        smtp.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+    print(f"✅ E-Mail gesendet an {EMAIL_TO}.")
+
+
 def post_to_slack(payload: dict) -> None:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -351,6 +422,9 @@ def main() -> None:
     print("📝 Formatiere Slack-Nachricht …")
     payload = format_slack_message(events_text, saturday, sunday, forecast)
     post_to_slack(payload)
+
+    print("📧 Sende E-Mail …")
+    send_email(events_text, saturday, sunday, forecast)
 
 
 if __name__ == "__main__":
