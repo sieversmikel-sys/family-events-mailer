@@ -112,10 +112,13 @@ def fetch_ticketmaster_events(date: datetime.date) -> list[str]:
     if not TICKETMASTER_API_KEY:
         return []
     params = urllib.parse.urlencode({
-        "apikey": TICKETMASTER_API_KEY, "city": "Köln", "countryCode": "DE",
+        "apikey": TICKETMASTER_API_KEY,
+        "latlong": f"{LAT},{LON}",
+        "radius": 30, "unit": "km",
+        "countryCode": "DE",
         "startDateTime": f"{date.isoformat()}T00:00:00Z",
         "endDateTime":   f"{date.isoformat()}T23:59:59Z",
-        "radius": 30, "unit": "km", "size": 8, "sort": "relevance,desc",
+        "size": 10, "sort": "date,asc", "locale": "de",
     })
     try:
         with urllib.request.urlopen(
@@ -142,11 +145,14 @@ def fetch_eventbrite_events(date: datetime.date) -> list[str]:
     if not EVENTBRITE_API_KEY:
         return []
     params = urllib.parse.urlencode({
-        "location.address": "Köln, Deutschland",
+        "q": "Köln",
+        "location.latitude": LAT,
+        "location.longitude": LON,
         "location.within": "30km",
-        "start_date.range_start": f"{date.isoformat()}T00:00:00",
-        "start_date.range_end":   f"{date.isoformat()}T23:59:59",
-        "expand": "venue", "page_size": 8,
+        "start_date.range_start": f"{date.isoformat()}T00:00:00Z",
+        "start_date.range_end":   f"{date.isoformat()}T23:59:59Z",
+        "expand": "venue",
+        "page_size": 8,
     })
     try:
         req = urllib.request.Request(
