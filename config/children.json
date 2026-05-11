@@ -10,5 +10,17 @@
       "alter": 13,
       "interessen": ["Kino", "Anime", "Fussball", "Schwimmen", "Pizza essen", "Kämpfen", "RAP"]
     }
+  ],
+  "eltern": [
+    {
+      "name": "Mikel",
+      "alter": 55,
+      "interessen": ["Kunst", "Sport", "Essen", "Bewegung"]
+    },
+    {
+      "name": "Sandra",
+      "alter": 51,
+      "interessen": ["Kunst", "Sport", "Tai-Chi", "Malen", "Essen", "Bewegung"]
+    }
   ]
 }
