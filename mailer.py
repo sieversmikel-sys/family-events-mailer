@@ -21,7 +21,7 @@ import anthropic
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-EMAIL_TO = "sievers.mikel@gmail.com"
+EMAIL_TO = "sievers.mikel@gmail.com, hamacher.sandy@gmail.com"
 EMAIL_FROM = "sievers.mikel@gmail.com"
 
 # Koordinaten Leverkusen (Stadtmitte)
