@@ -151,7 +151,7 @@ def fetch_ticketmaster_events(date: datetime.date) -> list[dict]:
         "size":          10,
         "sort":          "relevance,desc",
     })
-    url = f"https://app.ticketmaster.com/discovery/v2/events.json?{params}"
+    url = f"https://app.ticketmaster.eu/discovery/v2/events.json?{params}"
     try:
         with urllib.request.urlopen(url, timeout=10) as r:
             data = json.loads(r.read())
