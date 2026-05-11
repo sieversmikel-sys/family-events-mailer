@@ -168,6 +168,10 @@ def fetch_google_events(date: datetime.date) -> list[str]:
             snippet = item.get("snippet", "")[:120]
             lines.append(f"• {title}: {snippet}")
         return lines
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")[:300]
+        print(f"⚠️  Google Search HTTP {e.code}: {body}")
+        return []
     except Exception as ex:
         print(f"⚠️  Google Search: {ex}")
         return []
