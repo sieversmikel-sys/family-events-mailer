@@ -13,6 +13,8 @@ import urllib.parse
 import smtplib
 import email.mime.multipart
 import email.mime.text
+import email.mime.base
+import email.encoders
 from pathlib import Path
 import anthropic
 
@@ -157,17 +159,21 @@ FOCUS_LABEL = {
 }
 
 
-def load_children() -> list[dict]:
+def load_family() -> dict:
     path = CONFIG_DIR / "children.json"
     with open(path, encoding="utf-8") as f:
-        return json.load(f)["kinder"]
+        return json.load(f)
 
 
-def children_for_prompt(kinder: list[dict]) -> str:
-    lines = []
-    for k in kinder:
+def family_for_prompt(family: dict) -> str:
+    lines = ["Kinder:"]
+    for k in family.get("kinder", []):
         interessen = ", ".join(k["interessen"]) if k["interessen"] else "keine Angabe"
-        lines.append(f"- {k['name']}, {k['alter']} Jahre alt → Interessen: {interessen}")
+        lines.append(f"  - {k['name']}, {k['alter']} Jahre → Interessen: {interessen}")
+    lines.append("Eltern:")
+    for e in family.get("eltern", []):
+        interessen = ", ".join(e["interessen"]) if e["interessen"] else "keine Angabe"
+        lines.append(f"  - {e['name']}, {e['alter']} Jahre → Interessen: {interessen}")
     return "\n".join(lines)
 
 
@@ -197,20 +203,22 @@ def find_events_with_claude(saturday: datetime.date, sunday: datetime.date, fore
     if "Sonntag" in forecast:
         weather_block += day_block("Sonntag", forecast["Sonntag"], sun_typ)
 
-    kinder = load_children()
-    kinder_text = children_for_prompt(kinder)
+    family = load_family()
+    family_text = family_for_prompt(family)
 
     prompt = f"""Du bist ein hilfreicher Familienassistent. Erstelle konkrete Ausflugstipps
 für das Wochenende {sat_str}–{sun_str} in der Region Leverkusen/Köln.
 
 ══════════════════════════════════════════
-KINDER & INTERESSEN
+FAMILIE & INTERESSEN
 ══════════════════════════════════════════
-{kinder_text}
+{family_text}
 
-Berücksichtige die Interessen bei jeder Empfehlung: Priorisiere Aktivitäten die zu mindestens
-einem der genannten Interessen passen. Weise in der Beschreibung kurz darauf hin warum
-das Kind diese Aktivität mögen wird.
+Berücksichtige die Interessen ALLER Familienmitglieder:
+- Priorisiere Aktivitäten die möglichst viele ansprechen
+- Weise bei jeder Empfehlung kurz darauf hin für wen sie besonders geeignet ist
+- Plane auch Momente ein wo Eltern etwas für sich genießen können (z.B. Kunst, Tai-Chi, gutes Essen)
+  während die Kinder beschäftigt sind
 
 ══════════════════════════════════════════
 WETTERVORHERSAGE + AKTIVITÄTSVORGABE
@@ -223,23 +231,34 @@ DEINE AUFGABE
 Empfiehl ausschließlich Aktivitäten die zum oben festgelegten Fokus (Indoor / Outdoor / Gemischt)
 des jeweiligen Tages passen. Weiche NICHT davon ab.
 
+Erstelle MINDESTENS 6 Empfehlungen pro Tag, damit die Familie aus einer echten Auswahl wählen kann.
+Strukturiere den Tag mit konkreten Uhrzeiten – denke in Tagesabschnitten:
+  🌅 Vormittag (09:00–12:00)
+  ☀️ Mittag (12:00–14:00) – gerne Essensvorschlag (Pizza etc.)
+  🌆 Nachmittag (14:00–18:00)
+  🌙 Abend (ab 18:00) – optional
+
 Gib für jede Empfehlung an:
-1. Name und kurze Beschreibung
-2. Ort (Adresse oder Stadtteil in Köln/Leverkusen)
-3. Öffnungszeiten / wann am besten hingehen
+1. Uhrzeit / Tagesabschnitt
+2. Name und kurze Beschreibung
+3. Ort (Adresse oder Stadtteil in Köln/Leverkusen)
 4. Warum es zu den Interessen der Kinder passt
 5. Ungefähre Kosten
 
 Struktur:
-★ TOP-TIPP (1 Highlight für die ganze Familie, wettergerecht + interessengerecht)
-📍 SAMSTAG – {FOCUS_LABEL[sat_typ]}: 2–3 Empfehlungen
-📍 SONNTAG – {FOCUS_LABEL[sun_typ]}: 2–3 Empfehlungen
+★ TOP-TIPP (1 Highlight für das ganze Wochenende)
+
+📍 SAMSTAG {saturday.strftime("%d.%m.")} – {FOCUS_LABEL[sat_typ]}
+[mindestens 6 Vorschläge mit Uhrzeiten]
+
+📍 SONNTAG {sunday.strftime("%d.%m.")} – {FOCUS_LABEL[sun_typ]}
+[mindestens 6 Vorschläge mit Uhrzeiten]
 
 Schreibe kompakt und freundlich auf Deutsch."""
 
     message = client.messages.create(
         model="claude-opus-4-7",
-        max_tokens=1500,
+        max_tokens=3000,
         messages=[{"role": "user", "content": prompt}],
         system=(
             "Du bist ein lokaler Familienassistent für die Region Leverkusen/Köln. "
@@ -289,7 +308,7 @@ def format_slack_message(
                 "elements": [
                     {
                         "type": "mrkdwn",
-                        "text": "📍 Region Leverkusen/Köln  •  👧 Halley Malia (5 J.)  •  🧑 Samuel (13 J.)",
+                        "text": "📍 Region Leverkusen/Köln  •  👨 Mikel & 👩 Sandra  •  👧 Halley Malia (5 J.)  •  🧑 Samuel (13 J.)",
                     }
                 ],
             },
@@ -323,6 +342,56 @@ def format_slack_message(
     }
 
 
+def build_ics(events_text: str, saturday: datetime.date, sunday: datetime.date) -> bytes:
+    """Erstellt eine .ics-Kalenderdatei mit je einem Termin für Samstag und Sonntag."""
+    def ics_date(d: datetime.date) -> str:
+        return d.strftime("%Y%m%d")
+
+    def ics_text(text: str) -> str:
+        # Zeilenumbrüche und Sonderzeichen für ICS escapen
+        return text.replace("\\", "\\\\").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
+
+    # Events-Text grob auf Samstag/Sonntag aufteilen
+    sat_marker = f"SAMSTAG"
+    sun_marker = f"SONNTAG"
+    if sat_marker in events_text and sun_marker in events_text:
+        sat_desc = events_text[events_text.find(sat_marker):events_text.find(sun_marker)].strip()
+        sun_desc = events_text[events_text.find(sun_marker):].strip()
+    else:
+        sat_desc = events_text
+        sun_desc = events_text
+
+    uid_sat = f"sat-{saturday.isoformat()}@family-events-mailer"
+    uid_sun = f"sun-{sunday.isoformat()}@family-events-mailer"
+    now = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+    ics = (
+        "BEGIN:VCALENDAR\r\n"
+        "VERSION:2.0\r\n"
+        "PRODID:-//Family Events Mailer//DE\r\n"
+        "CALSCALE:GREGORIAN\r\n"
+        "METHOD:PUBLISH\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:{uid_sat}\r\n"
+        f"DTSTAMP:{now}\r\n"
+        f"DTSTART;VALUE=DATE:{ics_date(saturday)}\r\n"
+        f"DTEND;VALUE=DATE:{ics_date(saturday + datetime.timedelta(days=1))}\r\n"
+        f"SUMMARY:🎉 Familien-Events Samstag {saturday.strftime('%d.%m.')}\r\n"
+        f"DESCRIPTION:{ics_text(sat_desc)}\r\n"
+        "END:VEVENT\r\n"
+        "BEGIN:VEVENT\r\n"
+        f"UID:{uid_sun}\r\n"
+        f"DTSTAMP:{now}\r\n"
+        f"DTSTART;VALUE=DATE:{ics_date(sunday)}\r\n"
+        f"DTEND;VALUE=DATE:{ics_date(sunday + datetime.timedelta(days=1))}\r\n"
+        f"SUMMARY:🎉 Familien-Events Sonntag {sunday.strftime('%d.%m.')}\r\n"
+        f"DESCRIPTION:{ics_text(sun_desc)}\r\n"
+        "END:VEVENT\r\n"
+        "END:VCALENDAR\r\n"
+    )
+    return ics.encode("utf-8")
+
+
 def send_email(events_text: str, saturday: datetime.date, sunday: datetime.date, forecast: dict) -> None:
     if not GMAIL_APP_PASSWORD:
         print("⚠️  GMAIL_APP_PASSWORD nicht gesetzt – E-Mail wird übersprungen.")
@@ -352,7 +421,7 @@ def send_email(events_text: str, saturday: datetime.date, sunday: datetime.date,
     html = f"""
     <html><body style="font-family:Arial,sans-serif;max-width:700px;margin:auto;padding:20px;">
       <h2 style="color:#2c3e50;">🎉 Familien-Wochenende {sat_str}–{sun_str}</h2>
-      <p style="color:#666;">📍 Region Leverkusen/Köln &nbsp;|&nbsp; 👧 Halley Malia (5 J.) &nbsp;|&nbsp; 🧑 Samuel (13 J.)</p>
+      <p style="color:#666;">📍 Region Leverkusen/Köln &nbsp;|&nbsp; 👨 Mikel &amp; 👩 Sandra &nbsp;|&nbsp; 👧 Halley Malia (5 J.) &nbsp;|&nbsp; 🧑 Samuel (13 J.)</p>
       <hr>
       <h3>🌤️ Wettervorhersage</h3>
       <table style="border-collapse:collapse;width:100%;">
@@ -376,15 +445,25 @@ def send_email(events_text: str, saturday: datetime.date, sunday: datetime.date,
     </body></html>
     """
 
-    msg = email.mime.multipart.MIMEMultipart("alternative")
+    msg = email.mime.multipart.MIMEMultipart("mixed")
     msg["Subject"] = f"🎉 Familien-Wochenende {sat_str}–{sun_str} | Leverkusen/Köln"
     msg["From"] = EMAIL_FROM
     msg["To"] = EMAIL_TO
+
     msg.attach(email.mime.text.MIMEText(html, "html", "utf-8"))
 
+    # .ics Kalender-Anhang
+    ics_data = build_ics(events_text, saturday, sunday)
+    ics_part = email.mime.base.MIMEBase("text", "calendar", method="PUBLISH")
+    ics_part.set_payload(ics_data)
+    email.encoders.encode_base64(ics_part)
+    ics_part.add_header("Content-Disposition", "attachment", filename="familien-events.ics")
+    msg.attach(ics_part)
+
+    recipients = [r.strip() for r in EMAIL_TO.split(",")]
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
         smtp.login(EMAIL_FROM, GMAIL_APP_PASSWORD)
-        smtp.sendmail(EMAIL_FROM, EMAIL_TO, msg.as_string())
+        smtp.sendmail(EMAIL_FROM, recipients, msg.as_string())
     print(f"✅ E-Mail gesendet an {EMAIL_TO}.")
 
 
