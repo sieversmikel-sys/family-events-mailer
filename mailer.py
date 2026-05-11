@@ -21,7 +21,7 @@ import anthropic
 SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
-EMAIL_TO = "sievers.mikel@gmail.com, hamacher.sandy@gmail.com"
+EMAIL_TO = "sievers.mikel@gmail.com"
 EMAIL_FROM = "sievers.mikel@gmail.com"
 
 # Koordinaten Leverkusen (Stadtmitte)
@@ -269,6 +269,21 @@ Schreibe kompakt und freundlich auf Deutsch."""
     return message.content[0].text
 
 
+def _slack_text_blocks(text: str, limit: int = 2900) -> list[dict]:
+    """Teilt langen Text in mehrere Slack-Section-Blöcke à max. 2900 Zeichen."""
+    chunks = []
+    while text:
+        if len(text) <= limit:
+            chunks.append(text)
+            break
+        split_at = text.rfind("\n", 0, limit)
+        if split_at == -1:
+            split_at = limit
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip("\n")
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": chunk}} for chunk in chunks]
+
+
 def format_slack_message(
     events_text: str,
     saturday: datetime.date,
@@ -321,10 +336,7 @@ def format_slack_message(
                 },
             },
             {"type": "divider"},
-            {
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": events_text},
-            },
+            *_slack_text_blocks(events_text),
             {"type": "divider"},
             {
                 "type": "context",
