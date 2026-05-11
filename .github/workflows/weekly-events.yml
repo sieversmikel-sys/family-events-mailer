@@ -29,5 +29,5 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          TICKETMASTER_API_KEY :$ {{ secrets.TICKETMASTER_API_KEY }}
+          TICKETMASTER_API_KEY: $ {{ secrets.TICKETMASTER_API_KEY }}
         run: python mailer.py
