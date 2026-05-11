@@ -1,0 +1,14 @@
+{
+  "kinder": [
+    {
+      "name": "Halley Malia",
+      "alter": 5,
+      "interessen": ["Pony", "Radfahren", "Einhorn", "Tanzen", "Singen", "Schwimmen", "Kino", "Pizza essen", "Malen"]
+    },
+    {
+      "name": "Samuel",
+      "alter": 13,
+      "interessen": ["Kino", "Anime", "Fussball", "Schwimmen", "Pizza essen", "Kämpfen", "RAP"]
+    }
+  ]
+}
