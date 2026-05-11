@@ -192,13 +192,61 @@ def load_family() -> dict:
         return json.load(f)
 
 
+def load_visited() -> list[str]:
+    path = CONFIG_DIR / "visited_places.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        # Nur die letzten 4 Wochen berücksichtigen
+        return [p for entry in data.get("history", [])[-4:] for p in entry.get("places", [])]
+    except Exception:
+        return []
+
+
+def save_visited(new_places: list[str]) -> None:
+    path = CONFIG_DIR / "visited_places.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {"history": []}
+    data["history"].append({
+        "datum": datetime.date.today().isoformat(),
+        "places": new_places,
+    })
+    # Maximal 8 Einträge behalten
+    data["history"] = data["history"][-8:]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def extract_place_names(text: str) -> list[str]:
+    """Extrahiert Ortsnamen grob aus dem generierten Text."""
+    known = [
+        "Zoo", "Kölner Zoo", "Schokoladenmuseum", "Odysseum", "Museum Ludwig",
+        "Agrippabad", "Phantasialand", "Rheinufer", "Stadtwald", "Botanischer Garten",
+        "Lanxess Arena", "Philharmonie", "Claudius Therme", "Rheinpark",
+        "Tierpark Leverkusen", "Bayer Erholungsgelände", "Altstadt",
+    ]
+    found = [p for p in known if p.lower() in text.lower()]
+    return list(set(found))
+
+
 def family_for_prompt(family: dict) -> str:
+    def person_line(p: dict) -> str:
+        interessen  = ", ".join(p.get("interessen", [])) or "keine Angabe"
+        abneigungen = ", ".join(p.get("abneigungen", []))
+        line = f"  - {p['name']}, {p['alter']} J. → mag: {interessen}"
+        if abneigungen:
+            line += f" | mag NICHT: {abneigungen}"
+        return line
+
     lines = ["Kinder:"]
     for k in family.get("kinder", []):
-        lines.append(f"  - {k['name']}, {k['alter']} J. → {', '.join(k['interessen'])}")
+        lines.append(person_line(k))
     lines.append("Eltern:")
     for e in family.get("eltern", []):
-        lines.append(f"  - {e['name']}, {e['alter']} J. → {', '.join(e['interessen'])}")
+        lines.append(person_line(e))
     return "\n".join(lines)
 
 
@@ -224,6 +272,9 @@ Erstelle einen Tagesplan für {tag}, den {date.strftime("%d.%m.%Y")}.
 ══ FAMILIE ══
 {family_text}
 
+Wichtig: Schlage NIEMALS Aktivitäten vor die unter "mag NICHT" stehen.
+Priorisiere Aktivitäten die zu den Interessen passen.
+
 ══ WETTER ══
 {w['emoji']} {w['beschreibung']}, {w['temp_min']:.0f}–{w['temp_max']:.0f} °C,
 Regen {w['regen_wahrscheinlichkeit']:.0f} % → Fokus: {FOCUS_LABEL[typ]}
@@ -232,14 +283,15 @@ Erlaubte Aktivitäten: {ACTIVITY_LISTS[typ]}
 ══ ECHTE EVENTS HEUTE (Ticketmaster) ══
 {tm_text}
 
-══ BEREITS VORGESCHLAGEN (NICHT WIEDERHOLEN) ══
+══ GESPERRTE ORTE (in den letzten Wochen bereits vorgeschlagen – NICHT nochmal empfehlen) ══
 {avoid_text}
 
 ══ AUFGABE ══
 Erstelle MINDESTENS 6 verschiedene Empfehlungen für diesen Tag.
 Integriere die echten Ticketmaster-Events wo passend.
 Alle Empfehlungen müssen zum Wetter-Fokus ({FOCUS_LABEL[typ]}) passen.
-Keine Wiederholungen aus der "bereits vorgeschlagen"-Liste.
+WICHTIG: Schlage KEINEN der gesperrten Orte vor – auch nicht indirekt oder als Alternative.
+Bevorzuge weniger bekannte, abwechslungsreiche Geheimtipps statt immer Zoo/Schokoladenmuseum.
 
 Strukturiere nach Tageszeit mit konkreten Uhrzeiten:
 🌅 Vormittag (09:00–12:00)
@@ -283,18 +335,28 @@ def find_events_with_claude(
     sun_tm = fetch_ticketmaster_events(sunday)
     print(f"   → Samstag: {len(sat_tm)} Events | Sonntag: {len(sun_tm)} Events")
 
+    visited = load_visited()
+
     print("   🤖 Claude plant Samstag …")
     sat_text = find_events_for_day(
-        "Samstag", saturday, sat_w, sat_typ, family_text, sat_tm, []
+        "Samstag", saturday, sat_w, sat_typ, family_text, sat_tm, visited
     )
 
-    # Extrahiere grob die Ortsnamen aus Samstag um Duplikate zu vermeiden
-    sat_lines = [l.strip() for l in sat_text.splitlines() if l.strip()]
+    # Samstags-Orte extrahieren und für Sonntag sperren
+    sat_places = extract_place_names(sat_text)
+    sun_blocked = list(set(visited + sat_places))
 
     print("   🤖 Claude plant Sonntag …")
     sun_text = find_events_for_day(
-        "Sonntag", sunday, sun_w, sun_typ, family_text, sun_tm, sat_lines
+        "Sonntag", sunday, sun_w, sun_typ, family_text, sun_tm, sun_blocked
     )
+
+    # Alle vorgeschlagenen Orte für nächste Woche speichern
+    sun_places = extract_place_names(sun_text)
+    all_places = list(set(sat_places + sun_places))
+    if all_places:
+        save_visited(all_places)
+        print(f"   💾 Gespeichert für nächste Woche: {', '.join(all_places)}")
 
     return sat_text, sun_text
 
